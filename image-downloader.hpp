@@ -13,7 +13,7 @@ class ImageDownloader {
         std::map<std::string, std::string> m_urlMap_;
         bool getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route);
         void createRequest(int socketFd, std::string &hostname, std::string &route);
-        int findBodySeparator(int bufSize, int &separatorPos);
+        int findBodySeparator(int bufSize);
     public:
         ImageDownloader(char **argv, int n, SyncFileBuffer* syncFileBuffer);
         void startDownload();

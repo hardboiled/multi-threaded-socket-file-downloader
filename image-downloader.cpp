@@ -1,13 +1,16 @@
 #include <algorithm>
 #include <mutex>
-#include <netinet/in.h>
-#include <netdb.h>
 #include <regex>
 #include <sstream>
 #include <string>
+#include <thread>
+
+#include <netdb.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <thread>
+#include <unistd.h>
+
 #include "image-downloader.hpp"
 
 #define TLS_PORT 443
@@ -41,45 +44,49 @@ void ImageDownloader::startDownload() {
     struct hostent *server;
 
     try {
-        std::for_each(this->m_urlMap_.begin(), this->m_urlMap_.end(), [&](auto url, auto filepath) -> void {
-            string hostname;
-            string route;
+        for (auto it = this->m_urlMap_.begin(); it != this->m_urlMap_.end(); ++it) {
+            std::string url =  it->first;
+            std::string filepath = it->second;
+            std::string hostname;
+            std::string route;
             if (this->getHostnameAndRouteFromUrl(url, hostname, route)) {
                 throw "Url " + url + " is malformed!";
             }
             socketFd = socket(AF_INET, SOCK_STREAM, 0);
-            if (sockfd < 0) throw "ERROR opening socket";
+            if (socketFd < 0) throw "ERROR opening socket";
             server = gethostbyname(hostname.c_str());
             this->createRequest(socketFd, hostname, route);
 
             int prefixLen = -1;
-            while ( read(sock, this->buffer_, IMAGE_FILE_BUFFER_SIZE) > 0 ) {
-                if ((prefixLen = this->findBodySeparator(this->buffer_, IMAGE_FILE_BUFFER_SIZE) >= 0) break;
+            this->syncFileBuffer_->waitForConsumption();
+            while ( read(socketFd, this->buffer_, IMAGE_FILE_BUFFER_SIZE) > 0 ) {
+                if ((prefixLen = this->findBodySeparator(IMAGE_FILE_BUFFER_SIZE)) >= 0) break;
             }
             if (prefixLen < IMAGE_FILE_BUFFER_SIZE - 1) {
                 int remainingSize = IMAGE_FILE_BUFFER_SIZE - prefixLen;
-                memcpy(this->buffer_, &this->buffer_[prefixLen], remainingSize));
+                memcpy(this->buffer_, &this->buffer_[prefixLen], remainingSize);
             }
 
             int bytesRead = 0;
-            while ((bytesRead = read(sock, this->buffer_, IMAGE_FILE_BUFFER_SIZE)) > 0) {
-                this->syncFileBuffer_->setBufferReadyAndWait(&filepath, this->buffer_, bytesRead);
+            while ((bytesRead = read(socketFd, this->buffer_, IMAGE_FILE_BUFFER_SIZE)) > 0) {
+                this->syncFileBuffer_->setBufferReady(&filepath, this->buffer_, bytesRead);
+                this->syncFileBuffer_->waitForConsumption();
             }
-            this->syncFileBuffer_->setBufferReadyAndWait(&filepath, this->buffer_, -1);
+            this->syncFileBuffer_->setBufferReady(&filepath, this->buffer_, -1);
             close(socketFd);
-        });
+        }
     } catch(std::exception& e) {
         close(socketFd);
     }
 }
 
-int ImageDownloader::findBodySeparator(int bufSize, int &separatorPos) {
+int ImageDownloader::findBodySeparator(int bufSize) {
     std::regex rx(R"((.+\r\n\r\n))");
     std::cmatch cm;
     std::string s = std::string(this->buffer_, bufSize + 1); // add space for null character
     std::regex_match(s.c_str(), cm, rx);
     if (cm.size() <= 1) return -1;
-    return cm[0].length;
+    return cm[0].length();
 }
 
 bool ImageDownloader::getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route) {

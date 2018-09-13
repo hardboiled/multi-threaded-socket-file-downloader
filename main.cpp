@@ -27,39 +27,48 @@ void spawnThreads(int numImages, char *argv[]) {
     int numThreads = std::thread::hardware_concurrency() - 1;
     int avg = numImages / numThreads;
     int mod = numImages % numThreads;
+
+    // make one image downloader per thread and distribute images equitably to downloaders
     for (int i = 0; i < numThreads && i < numImages; ++i) {
         int idx = (i * avg) + std::min(i, mod);
         int numberToProcess = ((i + 1) * avg) + std::min(i + 1, mod) - idx;
-        syncFileBuffers.push_back(SyncFileBuffer());
-        imageDownloaders.push_back(ImageDownloader(&argv[idx], numberToProcess, &syncFileBuffers.back()));
+        auto syncd = SyncFileBuffer();
+        syncFileBuffers.push_back(syncd);
+        auto imgd = ImageDownloader(&argv[idx], numberToProcess, &syncFileBuffers.back());
+        imageDownloaders.push_back(imgd);
+    }
+
+    //bootstrap threads. Don't care about joining them.
+    for (auto &imgd : imageDownloaders) {
+        std::thread t(&ImageDownloader::startDownload, imgd);
     }
 }
 
-void writeFiles() {
+void writeFiles(int numImages) {
     auto file_map = std::map<std::string, std::ofstream>();
-    for(auto &sfb : syncFileBuffers) {
-        if (sfb.lockIfBufferReady()) {
-            if (file_map.find(*sfb.currentFilepath) == file_map.end()) {
-                file_map[*sfb.currentFilepath] = std::ofstream(*sfb.currentFilepath,  std::ofstream::out | std::ofstream::binary);
-            }
-            if (sfb.bytesAvailable <= 0) {
-                file_map[*sfb.currentFilepath].close();
-                file_map.erase(*sfb.currentFilepath);
-            } else {
-                file_map[*sfb.currentFilepath].write(sfb.currentBuffer, sfb.bytesAvailable);
+    int filesProcessed = 0;
+    while (filesProcessed < numImages) {
+        for(auto &sfb : syncFileBuffers) {
+            if (sfb.lockIfBufferReady()) {
+                if (file_map.find(*sfb.currentFilepath) == file_map.end()) {
+                    file_map[*sfb.currentFilepath] = std::ofstream(*sfb.currentFilepath,  std::ofstream::out | std::ofstream::binary);
+                }
+                if (sfb.bytesAvailable <= 0) {
+                    file_map[*sfb.currentFilepath].close();
+                    ++filesProcessed;
+                    file_map.erase(*sfb.currentFilepath);
+                } else {
+                    file_map[*sfb.currentFilepath].write(sfb.currentBuffer, sfb.bytesAvailable);
+                }
             }
         }
     }
 }
 int main(int argc, char *argv[]) {
     if (!isValidInput(argc, argv)) return -1;
-    std::string route;
-    std::string hostname;
-
-    std::for_each_n(&argv[1], argc - 1, [&route, &hostname](auto c_str)-> void { getHostnameAndRouteFromUrl(c_str, route, hostname); });
 
     spawnThreads((argc - 1) / 2, argv);
-    writeFiles();
+    writeFiles((argc - 1) / 2);
 
     return 0;
 }
