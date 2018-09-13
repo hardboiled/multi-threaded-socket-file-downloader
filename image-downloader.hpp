@@ -2,19 +2,20 @@
 #define IMAGE_DOWNLOADER_HPP
 #include <string>
 #include <map>
+#include "sync-file-buffer.hpp"
 
 #define IMAGE_FILE_BUFFER_SIZE 4096
 
 class ImageDownloader {
     private:
-        char buffer[IMAGE_FILE_BUFFER_SIZE];
-        std::map<std::string, std::string> m_urlMap;
-        int m_socketFd;
+        char buffer_[IMAGE_FILE_BUFFER_SIZE];
+        SyncFileBuffer* syncFileBuffer_;
+        std::map<std::string, std::string> m_urlMap_;
         bool getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route);
         void createRequest(int socketFd, std::string &hostname, std::string &route);
-        int ImageDownloader::foundBodySeparator(const char *localBuffer, int bufSize, int &separatorPos);
+        int findBodySeparator(int bufSize, int &separatorPos);
     public:
-        ImageDownloader(char **argv, int n);
-        void startDownload(char *buffer, int size);
+        ImageDownloader(char **argv, int n, SyncFileBuffer* syncFileBuffer);
+        void startDownload();
 };
 #endif

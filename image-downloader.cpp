@@ -13,9 +13,9 @@
 #define TLS_PORT 443
 #define USER_AGENT "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36"
 
-ImageDownloader::ImageDownloader(char **argv, int n) {
+ImageDownloader::ImageDownloader(char **argv, int n, SyncFileBuffer* syncFileBuffer) : syncFileBuffer_(syncFileBuffer) {
     for (int i = 0; i < n - 1; ++i) {
-        this->m_urlMap[std::string(argv[i])] = std::string(argv[i + 1]);
+        this->m_urlMap_[std::string(argv[i])] = std::string(argv[i + 1]);
     }
 }
 
@@ -35,14 +35,13 @@ void ImageDownloader::createRequest(int socketFd, std::string &hostname, std::st
     }
 }
 
-void ImageDownloader::startDownload(char *buffer, int bufSize) {
+void ImageDownloader::startDownload() {
     int socketFd, portNo = TLS_PORT;
     struct sockaddr_in servAddr;
     struct hostent *server;
-    char * localBuffer = new char[bufSize];
 
     try {
-        std::for_each(this->m_urlMap.begin(), this->m_urlMap.end(), [&](auto url, auto filename) -> void {
+        std::for_each(this->m_urlMap_.begin(), this->m_urlMap_.end(), [&](auto url, auto filepath) -> void {
             string hostname;
             string route;
             if (this->getHostnameAndRouteFromUrl(url, hostname, route)) {
@@ -54,32 +53,30 @@ void ImageDownloader::startDownload(char *buffer, int bufSize) {
             this->createRequest(socketFd, hostname, route);
 
             int prefixLen = -1;
-            while ( read(sock, localBuffer, bufSize) > 0 ) {
-                if ((prefixLen = this->foundBodySeparator(localBuffer, bufSize) >= 0) break;
+            while ( read(sock, this->buffer_, IMAGE_FILE_BUFFER_SIZE) > 0 ) {
+                if ((prefixLen = this->findBodySeparator(this->buffer_, IMAGE_FILE_BUFFER_SIZE) >= 0) break;
             }
-            if (prefixLen < bufSize - 1) {
-                int remainingSize = bufSize - prefixLen;
-                std::lock_guard<std::mutex> lock(buffer);
-                memcpy(buffer, &localBuffer[prefixLen], remainingSize));
+            if (prefixLen < IMAGE_FILE_BUFFER_SIZE - 1) {
+                int remainingSize = IMAGE_FILE_BUFFER_SIZE - prefixLen;
+                memcpy(this->buffer_, &this->buffer_[prefixLen], remainingSize));
             }
 
-            while (read(sock, localBuffer, bufSize) > 0) {
-                std::lock_guard<std::mutex> lock(buffer);
-                memcpy(buffer, localBuffer, bufSize);
+            int bytesRead = 0;
+            while ((bytesRead = read(sock, this->buffer_, IMAGE_FILE_BUFFER_SIZE)) > 0) {
+                this->syncFileBuffer_->setBufferReadyAndWait(&filepath, this->buffer_, bytesRead);
             }
+            this->syncFileBuffer_->setBufferReadyAndWait(&filepath, this->buffer_, -1);
             close(socketFd);
         });
     } catch(std::exception& e) {
         close(socketFd);
     }
-
-    delete[] localBuffer;
 }
 
-int ImageDownloader::foundBodySeparator(const char *localBuffer, int bufSize, int &separatorPos) {
+int ImageDownloader::findBodySeparator(int bufSize, int &separatorPos) {
     std::regex rx(R"((.+\r\n\r\n))");
     std::cmatch cm;
-    std::string s = std::string(localBuffer, bufSize + 1); // add space for null character
+    std::string s = std::string(this->buffer_, bufSize + 1); // add space for null character
     std::regex_match(s.c_str(), cm, rx);
     if (cm.size() <= 1) return -1;
     return cm[0].length;

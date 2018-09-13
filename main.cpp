@@ -1,10 +1,19 @@
 #include <algorithm>
+#include <cmath>
 #include <curl/curl.h>
 #include <curl/easy.h>
 #include <iostream>
+#include <fstream>
+#include <map>
 #include <regex>
 #include <stdio.h>
 #include <thread>
+#include <vector>
+#include "sync-file-buffer.hpp"
+#include "image-downloader.hpp"
+
+std::vector<ImageDownloader> imageDownloaders;
+std::vector<SyncFileBuffer> syncFileBuffers;
 
 //#include "image-downloader.hpp"
 bool isValidInput(int argc, char *argv[]) {
@@ -14,17 +23,43 @@ bool isValidInput(int argc, char *argv[]) {
     return false;
 }
 
+void spawnThreads(int numImages, char *argv[]) {
+    int numThreads = std::thread::hardware_concurrency() - 1;
+    int avg = numImages / numThreads;
+    int mod = numImages % numThreads;
+    for (int i = 0; i < numThreads && i < numImages; ++i) {
+        int idx = (i * avg) + std::min(i, mod);
+        int numberToProcess = ((i + 1) * avg) + std::min(i + 1, mod) - idx;
+        syncFileBuffers.push_back(SyncFileBuffer());
+        imageDownloaders.push_back(ImageDownloader(&argv[idx], numberToProcess, &syncFileBuffers.back()));
+    }
+}
+
+void writeFiles() {
+    auto file_map = std::map<std::string, std::ofstream>();
+    for(auto &sfb : syncFileBuffers) {
+        if (sfb.lockIfBufferReady()) {
+            if (file_map.find(*sfb.currentFilepath) == file_map.end()) {
+                file_map[*sfb.currentFilepath] = std::ofstream(*sfb.currentFilepath,  std::ofstream::out | std::ofstream::binary);
+            }
+            if (sfb.bytesAvailable <= 0) {
+                file_map[*sfb.currentFilepath].close();
+                file_map.erase(*sfb.currentFilepath);
+            } else {
+                file_map[*sfb.currentFilepath].write(sfb.currentBuffer, sfb.bytesAvailable);
+            }
+        }
+    }
+}
 int main(int argc, char *argv[]) {
-    std::cout << std::thread::hardware_concurrency() << " threads\n";
     if (!isValidInput(argc, argv)) return -1;
     std::string route;
     std::string hostname;
 
     std::for_each_n(&argv[1], argc - 1, [&route, &hostname](auto c_str)-> void { getHostnameAndRouteFromUrl(c_str, route, hostname); });
 
-    vector
-
-
+    spawnThreads((argc - 1) / 2, argv);
+    writeFiles();
 
     return 0;
 }
