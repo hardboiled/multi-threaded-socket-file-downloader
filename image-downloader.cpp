@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <fstream>
 #include <iostream>
 #include <regex>
 #include <sstream>
@@ -12,7 +11,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "image-downloader-2.hpp"
+#include "image-downloader.hpp"
 
 #define PORT "80"
 #define USER_AGENT "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36"
@@ -64,18 +63,19 @@ void ImageDownloader::createRequest(int socketFd, std::string &hostname, std::st
 
 void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
     int socketFd;
-    std::ofstream ofs;
     struct addrinfo *servinfo;
-    auto cleanup = [&socketFd, &ofs, &servinfo]() {
-        ofs.close();
+    std::string filepath;
+
+    auto cleanup = [&socketFd, &filepath, &servinfo, &sfb]() {
         close(socketFd);
         freeaddrinfo(servinfo);
+        sfb->setBufferReady(filepath, 0);
     };
 
     try {
         for (auto it = this->m_urlMap_.begin(); it != this->m_urlMap_.end(); ++it) {
             std::string url =  it->first;
-            std::string filepath = it->second;
+            filepath = it->second;
             std::string hostname;
             std::string route;
 
@@ -96,8 +96,9 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
 
             // std::cout << "before first recv" << "\n";
             int bytesRead = 0;
-            while ((bytesRead = recv(socketFd, this->buffer_, IMAGE_FILE_BUFFER_SIZE, 0)) > 0) {
-                if ((prefixLen = this->findBodySeparator(IMAGE_FILE_BUFFER_SIZE)) >= 0) break;
+            sfb->waitForConsumption();
+            while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
+                if ((prefixLen = this->findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
             }
 
             // std::cout.write(this->buffer_, prefixLen);
@@ -106,14 +107,17 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
             if (prefixLen < bytesRead) {
                 // std::cout.write(this->buffer_, bytesRead);
                 int remainingSize = bytesRead - prefixLen;
-                memcpy(this->buffer_, &this->buffer_[prefixLen], remainingSize);
-                ofs.write(this->buffer_, remainingSize);
+                memcpy(sfb->buffer, &sfb->buffer[prefixLen], remainingSize);
+
             }
 
 
             // // std::cout << "before second recv" << "\n";
-            while ((bytesRead = recv(socketFd, this->buffer_, IMAGE_FILE_BUFFER_SIZE, 0)) > 0) {
-                ofs.write(this->buffer_, bytesRead);
+            sfb->setBufferReady(filepath, bytesRead);
+            sfb->waitForConsumption();
+            while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
+                sfb->setBufferReady(filepath, bytesRead);
+                sfb->waitForConsumption();
             }
 
             // std::cout << "final bytes read " << bytesRead << "\n";
@@ -126,12 +130,12 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
     }
 }
 
-int ImageDownloader::findBodySeparator(int bufSize) {
+int ImageDownloader::findBodySeparator(const char* const buffer,int bufSize) {
     int offset = 0;
     std::string target = "\r\n\r\n";
     int idx = 0;
     while (idx < bufSize && offset < target.length()) {
-        if (target.at(offset) == this->buffer_[idx]) ++offset;
+        if (target.at(offset) == buffer[idx]) ++offset;
         else offset = 0;
         ++idx;
     }

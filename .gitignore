@@ -2,3 +2,7 @@
 *.out
 *.swap
 .vscode
+*.gif
+*.png
+*.jpg
+*.jpeg

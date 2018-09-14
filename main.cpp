@@ -13,7 +13,8 @@
 #include "image-downloader.hpp"
 
 std::vector<ImageDownloader> imageDownloaders;
-std::vector<SyncFileBuffer> syncFileBuffers;
+int m_numThreads = std::thread::hardware_concurrency() - 1;
+std::unique_ptr<SyncFileBuffer[]> syncFileBuffers(new SyncFileBuffer[m_numThreads]);
 
 //#include "image-downloader.hpp"
 bool isValidInput(int argc, char *argv[]) {
@@ -24,23 +25,20 @@ bool isValidInput(int argc, char *argv[]) {
 }
 
 void spawnThreads(int numImages, char *argv[]) {
-    int numThreads = std::thread::hardware_concurrency() - 1;
-    int avg = numImages / numThreads;
-    int mod = numImages % numThreads;
+    int avg = numImages / m_numThreads;
+    int mod = numImages % m_numThreads;
 
     // make one image downloader per thread and distribute images equitably to downloaders
-    for (int i = 0; i < numThreads && i < numImages; ++i) {
+    for (int i = 0; i < m_numThreads && i < numImages; ++i) {
         int idx = (i * avg) + std::min(i, mod);
         int numberToProcess = ((i + 1) * avg) + std::min(i + 1, mod) - idx;
-        auto syncd = SyncFileBuffer();
-        syncFileBuffers.push_back(syncd);
-        auto imgd = ImageDownloader(&argv[idx], numberToProcess, &syncFileBuffers.back());
+        auto imgd = ImageDownloader(&argv[idx], numberToProcess);
         imageDownloaders.push_back(imgd);
     }
 
     //bootstrap threads. Don't care about joining them.
-    for (auto &imgd : imageDownloaders) {
-        std::thread t(&ImageDownloader::startDownload, imgd);
+    for (int i = 0; i < imageDownloaders.size(); ++i) {
+        std::thread t(&ImageDownloader::startDownload, &imageDownloaders[i], &syncFileBuffers[i]);
     }
 }
 
@@ -48,27 +46,28 @@ void writeFiles(int numImages) {
     auto file_map = std::map<std::string, std::ofstream>();
     int filesProcessed = 0;
     while (filesProcessed < numImages) {
-        for(auto &sfb : syncFileBuffers) {
-            if (sfb.lockIfBufferReady()) {
-                if (file_map.find(*sfb.currentFilepath) == file_map.end()) {
-                    file_map[*sfb.currentFilepath] = std::ofstream(*sfb.currentFilepath,  std::ofstream::out | std::ofstream::binary);
+        for(int i = 0; i < m_numThreads; ++i) {
+            auto sfb = &syncFileBuffers[i];
+            if (sfb->lockIfBufferReady()) {
+                if (file_map.find(sfb->currentFilepath) == file_map.end()) {
+                    file_map[sfb->currentFilepath] = std::ofstream(sfb->currentFilepath,  std::ofstream::binary);
                 }
-                if (sfb.bytesAvailable <= 0) {
-                    file_map[*sfb.currentFilepath].close();
+                if (sfb->bytesAvailable <= 0) {
+                    file_map[sfb->currentFilepath].close();
                     ++filesProcessed;
-                    file_map.erase(*sfb.currentFilepath);
+                    file_map.erase(sfb->currentFilepath);
                 } else {
-                    file_map[*sfb.currentFilepath].write(sfb.currentBuffer, sfb.bytesAvailable);
+                    file_map[sfb->currentFilepath].write(sfb->buffer, sfb->bytesAvailable);
                 }
             }
         }
     }
 }
+
 int main(int argc, char *argv[]) {
     if (!isValidInput(argc, argv)) return -1;
 
-    spawnThreads((argc - 1) / 2, argv);
+    spawnThreads((argc - 1) / 2, &argv[1]);
     writeFiles((argc - 1) / 2);
-
     return 0;
 }
