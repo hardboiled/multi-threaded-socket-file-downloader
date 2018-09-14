@@ -3,6 +3,8 @@
 #include <string>
 #include <mutex>
 
+#define SYNC_FILE_BUFFER_SIZE 4096
+
 class SyncFileBuffer {
 private:
     std::mutex *bufferMutex_;
@@ -13,15 +15,17 @@ private:
 
 public:
     int bytesAvailable;
+    char currentBuffer[SYNC_FILE_BUFFER_SIZE];
     std::string* currentFilepath;
-    const char* currentBuffer;
 
     SyncFileBuffer();
+    SyncFileBuffer(SyncFileBuffer&& that);
+    SyncFileBuffer& operator=(SyncFileBuffer&& that);
     ~SyncFileBuffer();
     bool lockIfBufferReady();
     void waitForConsumption();
     void setBufferConsumed();
-    void setBufferReady(std::string* filepath, const char *buffer, int bytesAvailable);
+    void setBufferReady(std::string* filepath, int bytesAvailable);
 };
 
 #endif
