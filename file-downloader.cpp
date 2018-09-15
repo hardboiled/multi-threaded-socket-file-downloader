@@ -20,7 +20,7 @@
 bool getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route);
 void getSocketInfo(std::string &hostname, int &socketFd, struct addrinfo* &servinfo);
 void createRequest(int socketFd, std::string &hostname, std::string &route);
-int findBodySeparator(const char * const buffer, int bufSize);
+int findHeadersSectionLength(const char * const buffer, int bufSize);
 
 void getSocketInfo(std::string &hostname, int &socketFd, struct addrinfo* &servinfo) {
     int status = -1;
@@ -91,7 +91,7 @@ void file_downloader::startDownloadingFiles(char** urlFileArguments, int n, Sync
             int headersSectionLen = -1;
             int bytesRead = 0;
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
-                if ((headersSectionLen = findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
+                if ((headersSectionLen = findHeadersSectionLength(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
             }
 
             if (bytesRead <= 0) {
@@ -121,7 +121,7 @@ void file_downloader::startDownloadingFiles(char** urlFileArguments, int n, Sync
     }
 }
 
-int findBodySeparator(const char* const buffer,int bufSize) {
+int findHeadersSectionLength(const char* const buffer,int bufSize) {
     int offset = 0;
     std::string target = "\r\n\r\n"; // Separates the HTTP Header Section and Body Section
     int idx = 0;
