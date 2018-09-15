@@ -3,7 +3,7 @@
 #include <string>
 #include <mutex>
 
-#define SYNC_FILE_BUFFER_SIZE 16384
+#define SYNC_FILE_BUFFER_SIZE 65536
 
 class SyncFileBuffer {
 private:

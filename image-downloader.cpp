@@ -109,12 +109,15 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
                 // std::cout.write(this->buffer_, bytesRead);
                 int remainingSize = bytesRead - prefixLen;
                 memcpy(sfb->buffer, &sfb->buffer[prefixLen], remainingSize);
+                sfb->setBufferReady(filepath, remainingSize);
+                sfb->waitForConsumption();
             }
 
+            if (bytesRead <= 0) {
+                throw "initial read for " + filepath + " failed";
+            }
 
             // std::cout << "before second recv" << "\n";
-            sfb->setBufferReady(filepath, bytesRead);
-            sfb->waitForConsumption();
             // std::cout << "before second read\n";
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
                 sfb->setBufferReady(filepath, bytesRead);
@@ -126,7 +129,7 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
             cleanup();
         }
     } catch(const char* msg) {
-        // std::cout << "exception " << msg << "\n";
+        std::cout << "exception " << msg << "\n";
         cleanup();
     }
 }

@@ -52,7 +52,7 @@ void writeFiles(int numImages) {
             auto sfb = &m_syncFileBuffers[i];
             if (sfb->lockIfBufferReady()) {
                 if (file_map.find(sfb->currentFilepath) == file_map.end()) {
-                    file_map[sfb->currentFilepath] = std::ofstream(sfb->currentFilepath, std::ofstream::trunc | std::ofstream::binary);
+                    file_map[sfb->currentFilepath] = std::ofstream(sfb->currentFilepath, std::ofstream::trunc);
                     byte_me[sfb->currentFilepath] = 0;
                 }
                 if (sfb->bytesAvailable <= 0) {
