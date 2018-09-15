@@ -55,7 +55,6 @@ void ImageDownloader::createRequest(int socketFd, std::string &hostname, std::st
         << "\r\n";
     std::string request = ss.str();
 
-    // std::cout << request;
     if (send(socketFd, request.c_str(), request.length(), 0) != (int)request.length()) {
         throw "Error sending request.";
     }
@@ -79,34 +78,23 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
             std::string hostname;
             std::string route;
 
-            // std::cout << "before ofstream url " << url << "\n";
-            // std::cout << "before ofstream " << filepath << "\n";
-            // std::cout << "after ofstream" << "\n";
             if (!this->getHostnameAndRouteFromUrl(url, hostname, route)) {
                 throw "Url " + url + " is malformed!";
             }
 
-            // std::cout << "before getsocketInfo" << "\n";
             this->getSocketInfo(hostname, socketFd, servinfo);
 
-            // std::cout << "before createRequest" << "\n";
             this->createRequest(socketFd, hostname, route);
 
             int prefixLen = -1;
 
-            // std::cout << "before first recv" << "\n";
             int bytesRead = 0;
             sfb->waitForConsumption();
-            // std::cout << "before first read\n";
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
                 if ((prefixLen = this->findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
             }
 
-            // std::cout.write(this->buffer_, prefixLen);
-            // std::cout << "last bytes read " << bytesRead << "\n";
-            // std::cout << "before first ofs write" << "\n";
             if (prefixLen < bytesRead) {
-                // std::cout.write(this->buffer_, bytesRead);
                 int remainingSize = bytesRead - prefixLen;
                 memcpy(sfb->buffer, &sfb->buffer[prefixLen], remainingSize);
                 sfb->setBufferReady(filepath, remainingSize);
@@ -117,20 +105,17 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
                 throw "initial read for " + filepath + " failed";
             }
 
-            // std::cout << "before second recv" << "\n";
-            // std::cout << "before second read\n";
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
                 sfb->setBufferReady(filepath, bytesRead);
                 sfb->waitForConsumption();
             }
 
-            // std::cout << "final bytes read " << bytesRead << "\n";
-            // std::cout << "before cleanup" << "\n";
             cleanup();
         }
     } catch(const char* msg) {
-        std::cout << "exception " << msg << "\n";
+        std::cout << "exception " << msg << std::endl;
         cleanup();
+        exit(1);
     }
 }
 
@@ -143,8 +128,6 @@ int ImageDownloader::findBodySeparator(const char* const buffer,int bufSize) {
         else offset = 0;
         ++idx;
     }
-    // std::cout << "offset is " << offset << "\n";
-    // std::cout << "ids is " << idx << "\n";
     return (offset == target.length() && idx < bufSize) ? idx : -1;
 }
 
@@ -152,12 +135,8 @@ bool ImageDownloader::getHostnameAndRouteFromUrl(const std::string &url, std::st
     std::regex rx(R"(https?:\/\/([^\/]+)(\/.+))");
     std::cmatch cm;
     std::regex_match(url.c_str(), cm, rx);
-    // std::cout << "after match" << "\n";
     if (cm.size() <= 2) return false;
-    // std::cout << cm[1] << "\n";
-    // std::cout << cm[2] << "\n";
     hostname = std::string(cm[1]);
     route = std::string(cm[2]);
-    // std::cout << hostname << route << " blah \n";
     return true;
 }
