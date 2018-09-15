@@ -3,12 +3,11 @@
 #include <string>
 #include <mutex>
 
-#define SYNC_FILE_BUFFER_SIZE 4096
+#define SYNC_FILE_BUFFER_SIZE 16384
 
 class SyncFileBuffer {
 private:
     std::mutex bufferMutex_;
-    std::condition_variable cond_;
     bool bufferConsumed_ = false;
     std::unique_lock<std::mutex> producerLock_;
     std::unique_lock<std::mutex> consumerLock_;
@@ -18,7 +17,7 @@ public:
     char buffer[SYNC_FILE_BUFFER_SIZE];
     std::string currentFilepath;
 
-    SyncFileBuffer() : bytesAvailable(0), bufferConsumed_(true), currentFilepath("") { };
+    SyncFileBuffer();
     bool lockIfBufferReady();
     void waitForConsumption();
     void setBufferConsumed();

@@ -1,35 +1,32 @@
-#include "sync-file-buffer.hpp"
+#include <chrono>
+#include <thread>
 #include <utility>
 
+#include "sync-file-buffer.hpp"
+
+SyncFileBuffer::SyncFileBuffer() : bytesAvailable(0), bufferConsumed_(true), currentFilepath("") {
+    this->consumerLock_ = std::unique_lock<std::mutex>(this->bufferMutex_, std::defer_lock);
+    this->producerLock_ = std::unique_lock<std::mutex>(this->bufferMutex_, std::defer_lock);
+}
+
 void SyncFileBuffer::setBufferConsumed() {
-    if (this->consumerLock_.owns_lock()) {
-        this->bufferConsumed_ = true;
-        this->consumerLock_.unlock();
-        this->cond_.notify_one();
-    }
+    this->bufferConsumed_ = true;
+    this->consumerLock_.unlock();
 }
 
 void SyncFileBuffer::waitForConsumption() {
-    this->cond_.wait(this->producerLock_, [this]()-> bool { return !this->bufferConsumed_; });
+    while (!this->bufferConsumed_) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    this->producerLock_.lock();
 }
 
 void SyncFileBuffer::setBufferReady(std::string filepath, int bytesAvailable) {
-    if (this->producerLock_.owns_lock()) {
-        this->bytesAvailable = bytesAvailable;
-        this->currentFilepath = filepath;
-        this->bufferConsumed_ = false;
-        this->producerLock_.unlock();
-    }
+    this->bytesAvailable = bytesAvailable;
+    this->currentFilepath = filepath;
+    this->bufferConsumed_ = false;
+    this->producerLock_.unlock();
 }
 
 bool SyncFileBuffer::lockIfBufferReady() {
-    this->consumerLock_.try_lock();
-    if (this->consumerLock_.owns_lock()) {
-        if (this->bufferConsumed_ == false) {
-            return true;
-        }
-        this->consumerLock_.unlock();
-        this->cond_.notify_one();
-    }
-    return false;
+    if (this->bufferConsumed_ || !this->consumerLock_.try_lock()) return false;
+    return true;
 }
