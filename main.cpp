@@ -24,15 +24,16 @@ bool isValidInput(int argc, char *argv[]) {
 }
 
 void spawnThreads(int numArguments, char *urlFileArguments[]) {
-    int avg = numArguments / m_numThreads;
-    int mod = numArguments % m_numThreads;
+    int numFiles = numArguments / 2;
+    int avg = numFiles / m_numThreads;
+    int mod = numFiles % m_numThreads;
 
     // start threads and distribute files equitably to each thread
-    for (int i = 0; i < m_numThreads && i < numArguments; ++i) {
+    for (int i = 0; i < m_numThreads && i < numFiles; ++i) {
         int idx = (i * avg) + std::min(i, mod);
-        int numberToProcess = ((i + 1) * avg) + std::min(i + 1, mod) - idx;
+        int numFiles = (((i + 1) * avg) + std::min(i + 1, mod) - idx);
         m_threads[i] = new std::thread(
-            file_downloader::startDownloadingFiles, &urlFileArguments[idx], numberToProcess, &m_syncFileBuffers[i]
+            file_downloader::startDownloadingFiles, &urlFileArguments[idx * 2], numFiles * 2, &m_syncFileBuffers[i]
         );
     }
 }
