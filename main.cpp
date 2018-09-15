@@ -45,20 +45,23 @@ void spawnThreads(int numImages, char *argv[]) {
 
 void writeFiles(int numImages) {
     auto file_map = std::map<std::string, std::ofstream>();
+    auto byte_me = std::map<std::string, int>();
     int filesProcessed = 0;
     while (filesProcessed < numImages) {
         for(int i = 0; i < m_numThreads; ++i) {
             auto sfb = &m_syncFileBuffers[i];
             if (sfb->lockIfBufferReady()) {
                 if (file_map.find(sfb->currentFilepath) == file_map.end()) {
-                    file_map[sfb->currentFilepath] = std::ofstream(sfb->currentFilepath,  std::ofstream::binary);
+                    file_map[sfb->currentFilepath] = std::ofstream(sfb->currentFilepath, std::ofstream::trunc | std::ofstream::binary);
+                    byte_me[sfb->currentFilepath] = 0;
                 }
                 if (sfb->bytesAvailable <= 0) {
                     file_map[sfb->currentFilepath].close();
                     ++filesProcessed;
-                    std::cout << sfb->currentFilepath << " finished\n";
+                    std::cout << sfb->currentFilepath << " finished " << byte_me[sfb->currentFilepath] << std::endl;
                     file_map.erase(sfb->currentFilepath);
                 } else {
+                    byte_me[sfb->currentFilepath] += sfb->bytesAvailable;
                     file_map[sfb->currentFilepath].write(sfb->buffer, sfb->bytesAvailable);
                 }
                 sfb->setBufferConsumed();
