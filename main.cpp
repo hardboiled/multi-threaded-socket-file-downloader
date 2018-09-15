@@ -10,9 +10,8 @@
 #include <thread>
 #include <vector>
 #include "sync-file-buffer.hpp"
-#include "image-downloader.hpp"
+#include "file-downloader.hpp"
 
-std::vector<ImageDownloader> imageDownloaders;
 int m_numThreads = std::thread::hardware_concurrency() - 1;
 std::unique_ptr<SyncFileBuffer[]> m_syncFileBuffers(new SyncFileBuffer[m_numThreads]);
 std::thread** m_threads = new std::thread* [m_numThreads]();
@@ -25,21 +24,17 @@ bool isValidInput(int argc, char *argv[]) {
     return false;
 }
 
-void spawnThreads(int numImages, char *argv[]) {
-    int avg = numImages / m_numThreads;
-    int mod = numImages % m_numThreads;
+void spawnThreads(int numArguments, char *urlFileArguments[]) {
+    int avg = numArguments / m_numThreads;
+    int mod = numArguments % m_numThreads;
 
-    // make one image downloader per thread and distribute images equitably to downloaders
-    for (int i = 0; i < m_numThreads && i < numImages; ++i) {
+    // make start threads and distribute images equitably to each thread
+    for (int i = 0; i < m_numThreads && i < numArguments; ++i) {
         int idx = (i * avg) + std::min(i, mod);
         int numberToProcess = ((i + 1) * avg) + std::min(i + 1, mod) - idx;
-        auto imgd = ImageDownloader(&argv[idx * 2], numberToProcess * 2);
-        imageDownloaders.push_back(imgd);
-    }
-
-    //bootstrap threads. Don't care about joining them.
-    for (int i = 0; i < imageDownloaders.size(); ++i) {
-        m_threads[i] = new std::thread(&ImageDownloader::startDownload, &imageDownloaders[i], &m_syncFileBuffers[i]);
+        m_threads[i] = new std::thread(
+            file_downloader::startDownloadingFiles, &urlFileArguments[idx], numberToProcess, &m_syncFileBuffers[i]
+        );
     }
 }
 
@@ -83,7 +78,7 @@ void endThreads() {
 int main(int argc, char *argv[]) {
     if (!isValidInput(argc, argv)) return -1;
 
-    spawnThreads((argc - 1) / 2, &argv[1]);
+    spawnThreads(argc - 1, &argv[1]); //skip argv[0], because it's the executable name
     try {
         writeFiles((argc - 1) / 2);
     } catch (const char* msg) {

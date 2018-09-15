@@ -11,12 +11,18 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "image-downloader.hpp"
+#include "file-downloader.hpp"
 
 #define PORT "80"
 #define USER_AGENT "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_13_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/68.0.3440.106 Safari/537.36"
 
-void ImageDownloader::getSocketInfo(std::string &hostname, int &socketFd, struct addrinfo* &servinfo) {
+
+bool getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route);
+void getSocketInfo(std::string &hostname, int &socketFd, struct addrinfo* &servinfo);
+void createRequest(int socketFd, std::string &hostname, std::string &route);
+int findBodySeparator(const char * const buffer, int bufSize);
+
+void getSocketInfo(std::string &hostname, int &socketFd, struct addrinfo* &servinfo) {
     int status = -1;
     struct addrinfo hints;
 
@@ -35,13 +41,8 @@ void ImageDownloader::getSocketInfo(std::string &hostname, int &socketFd, struct
     status = connect(socketFd, servinfo->ai_addr, servinfo->ai_addrlen);
     if (status < 0) throw "Got Error while connecting " +  std::to_string(errno);
 }
-ImageDownloader::ImageDownloader(char **argv, int n) {
-    for (int i = 0; i < n - 1; i+=2) {
-        this->m_urlMap_[std::string(argv[i])] = std::string(argv[i + 1]);
-    }
-}
 
-void ImageDownloader::createRequest(int socketFd, std::string &hostname, std::string &route) {
+void createRequest(int socketFd, std::string &hostname, std::string &route) {
     std::stringstream ss;
 
     ss << "GET " << route << " HTTP/1.1\r\n"
@@ -60,7 +61,7 @@ void ImageDownloader::createRequest(int socketFd, std::string &hostname, std::st
     }
 }
 
-void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
+void file_downloader::startDownloadingFiles(char** urlFileArguments, int n, SyncFileBuffer* sfb) {
     int socketFd;
     struct addrinfo *servinfo;
     std::string filepath;
@@ -72,26 +73,26 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
     };
 
     try {
-        for (auto it = this->m_urlMap_.begin(); it != this->m_urlMap_.end(); ++it) {
-            std::string url =  it->first;
-            filepath = it->second;
+        for (int i = 0; i < n - 1; i+=2) {
+            std::string url = std::string(urlFileArguments[i]);
+            filepath = std::string(urlFileArguments[i + 1]);
             std::string hostname;
             std::string route;
 
-            if (!this->getHostnameAndRouteFromUrl(url, hostname, route)) {
+            if (!getHostnameAndRouteFromUrl(url, hostname, route)) {
                 throw "Url " + url + " is malformed!";
             }
 
-            this->getSocketInfo(hostname, socketFd, servinfo);
+            getSocketInfo(hostname, socketFd, servinfo);
 
-            this->createRequest(socketFd, hostname, route);
+            createRequest(socketFd, hostname, route);
 
             int prefixLen = -1;
 
             int bytesRead = 0;
             sfb->waitForConsumption();
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
-                if ((prefixLen = this->findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
+                if ((prefixLen = findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
             }
 
             if (prefixLen < bytesRead) {
@@ -119,9 +120,9 @@ void ImageDownloader::startDownload(SyncFileBuffer* sfb) {
     }
 }
 
-int ImageDownloader::findBodySeparator(const char* const buffer,int bufSize) {
+int findBodySeparator(const char* const buffer,int bufSize) {
     int offset = 0;
-    std::string target = "\r\n\r\n";
+    std::string target = "\r\n\r\n"; // Separates the HTTP Header Section and Body Section
     int idx = 0;
     while (idx < bufSize && offset < target.length()) {
         if (target.at(offset) == buffer[idx]) ++offset;
@@ -131,7 +132,7 @@ int ImageDownloader::findBodySeparator(const char* const buffer,int bufSize) {
     return (offset == target.length() && idx < bufSize) ? idx : -1;
 }
 
-bool ImageDownloader::getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route) {
+bool getHostnameAndRouteFromUrl(const std::string &url, std::string &hostname, std::string &route) {
     std::regex rx(R"(https?:\/\/([^\/]+)(\/.+))");
     std::cmatch cm;
     std::regex_match(url.c_str(), cm, rx);
