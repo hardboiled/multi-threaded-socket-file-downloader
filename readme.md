@@ -49,5 +49,5 @@ to HTTPS will *not* work.
 ## Feedback
 
 Feel free to leave any questions in the issues section. Note that this code is
-not meant to be full tested/production ready. It is just a prototype for
+not meant to be fully tested/production ready. It is just a prototype for
 demonstrating sockets and multi-threading in C++ with some new C++17 features.
