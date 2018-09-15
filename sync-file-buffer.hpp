@@ -1,5 +1,5 @@
-#ifndef IMAGE_BUFFER_OBJECT
-#define IMAGE_BUFFER_OBJECT
+#ifndef SYNC_FILE_BUFFER_HPP
+#define SYNC_FILE_BUFFER_HPP
 #include <string>
 #include <mutex>
 

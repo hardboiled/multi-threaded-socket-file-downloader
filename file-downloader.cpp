@@ -84,28 +84,29 @@ void file_downloader::startDownloadingFiles(char** urlFileArguments, int n, Sync
             }
 
             getSocketInfo(hostname, socketFd, servinfo);
-
             createRequest(socketFd, hostname, route);
 
-            int prefixLen = -1;
+            sfb->waitForConsumption(); // Lock buffer before proceeding
 
+            int headersSectionLen = -1;
             int bytesRead = 0;
-            sfb->waitForConsumption();
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
-                if ((prefixLen = findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
-            }
-
-            if (prefixLen < bytesRead) {
-                int remainingSize = bytesRead - prefixLen;
-                memcpy(sfb->buffer, &sfb->buffer[prefixLen], remainingSize);
-                sfb->setBufferReady(filepath, remainingSize);
-                sfb->waitForConsumption();
+                if ((headersSectionLen = findBodySeparator(sfb->buffer, SYNC_FILE_BUFFER_SIZE)) >= 0) break;
             }
 
             if (bytesRead <= 0) {
                 throw "initial read for " + filepath + " failed";
             }
 
+            // remove header information and copy the rest
+            if (headersSectionLen < bytesRead) {
+                int remainingSize = bytesRead - headersSectionLen;
+                memcpy(sfb->buffer, &sfb->buffer[headersSectionLen], remainingSize);
+                sfb->setBufferReady(filepath, remainingSize);
+                sfb->waitForConsumption();
+            }
+
+            // read rest of body
             while ((bytesRead = recv(socketFd, sfb->buffer, SYNC_FILE_BUFFER_SIZE, 0)) > 0) {
                 sfb->setBufferReady(filepath, bytesRead);
                 sfb->waitForConsumption();
