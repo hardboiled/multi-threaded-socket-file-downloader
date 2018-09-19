@@ -12,11 +12,12 @@ SyncFileBuffer::SyncFileBuffer() : bytesAvailable(0), bufferConsumed_(true), cur
 void SyncFileBuffer::setBufferConsumed() {
     this->bufferConsumed_ = true;
     this->consumerLock_.unlock();
+    this->cond_.notify_one();
 }
 
 void SyncFileBuffer::waitForConsumption() {
-    while (!this->bufferConsumed_) std::this_thread::sleep_for(std::chrono::milliseconds(50));
     this->producerLock_.lock();
+    this->cond_.wait(this->producerLock_, [this]() -> bool { return this->bufferConsumed_; });
 }
 
 void SyncFileBuffer::setBufferReady(std::string filepath, int bytesAvailable) {

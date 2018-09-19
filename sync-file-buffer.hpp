@@ -11,6 +11,7 @@ private:
     bool bufferConsumed_ = false;
     std::unique_lock<std::mutex> producerLock_;
     std::unique_lock<std::mutex> consumerLock_;
+    std::condition_variable cond_;
 
 public:
     int bytesAvailable;
